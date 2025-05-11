@@ -9,9 +9,9 @@ async def initialize_tables():
 
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS course_params (
-                        course_number TEXT PRIMARY KEY,
                         session TEXT,
-                        term TEXT
+                        term TEXT,
+                        course_number TEXT PRIMARY KEY
                     )
                 """)
                 await cursor.execute("""

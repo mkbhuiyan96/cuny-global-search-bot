@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 import re
 
-def process(soup: BeautifulSoup) -> tuple:
+async def process(soup: BeautifulSoup) -> tuple:
     div = soup.find("div", attrs={"class": "shadowbox"})
     details = div.find("p").get_text(strip=True)
     course_name = details.split(" - ")[0]
@@ -9,7 +9,7 @@ def process(soup: BeautifulSoup) -> tuple:
     td = soup.find("td", string=re.compile("Class Number"))
     course_number = td.find_next().get_text(strip=True)
 
-    td = soup.find("img", title=["Open", "Close", "Wait"]).find_parent("td")
+    td = soup.find("img", title=["Open", "Closed", "Wait"]).find_parent("td")
     status = td.get_text(strip=True)
 
     td = soup.find("td", attrs={"data-label": "Days And Times"})

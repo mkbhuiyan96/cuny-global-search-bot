@@ -24,7 +24,7 @@ def get_term_value(year: int, term: str) -> int:
     return (year-1900)*10 + term_offsets[term]
 
 
-async def scrape(year: int, term: str, course_number: int, session: Optional[str] = None, institution: Optional[str] = None) -> str:
+async def scrape(year: int, term: str, course_number: int, session: Optional[str] = None, institution: Optional[str] = None) -> BeautifulSoup:
     if not session:
         session = "Regular Academic Session"
     if not institution:

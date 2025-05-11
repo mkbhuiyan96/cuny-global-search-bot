@@ -16,7 +16,7 @@ async def add_course_details(conn, details_tuple):
         print(f'DB error occurred while attempting to add course details {details_tuple}: {e}')
 
 
-async def add_course_availabilities(conn, availabilities_tuple):
+async def add_course_availability(conn, availabilities_tuple):
     try:
         async with conn.cursor() as cursor:
             await cursor.execute('INSERT OR IGNORE INTO course_availabilities VALUES (?, ?, ?, ?, ?, ?, ?)', availabilities_tuple)
@@ -33,7 +33,7 @@ async def add_course(conn, course_tuple, course_details, course_availabilities):
 
     await add_course_params(conn, course_tuple)
     await add_course_details(conn, details_tuple)
-    await add_course_availabilities(conn, availabilities_tuple)
+    await add_course_availability(conn, availabilities_tuple)
 
 
 async def remove_course(conn, course_number):
@@ -106,20 +106,20 @@ async def add_user_interest(conn, user_interests_tuple):
         print(f'DB error occurred while attempting to add user interest {user_interests_tuple}: {e}')
 
 
-async def remove_user_interest(conn, user_id, course_number):
+async def remove_user_interest(conn, user_id, course_number) -> int:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute('DELETE FROM user_interests WHERE user_id = ? AND course_number = ?', (user_id, course_number))
-            num_deleted_user_interests = cursor.rowcount
+            if cursor.rowcount == 0:
+                return -1
 
             await cursor.execute('SELECT COUNT(*) FROM user_interests WHERE course_number = ?', (course_number,))
-            remaining_users_interested = await cursor.fetchone()
-            if remaining_users_interested[0] == 0:
+            (remaining_users_interested, ) = await cursor.fetchone()
+            if remaining_users_interested == 0:
                 await cursor.execute('DELETE FROM course_params WHERE course_number = ?', (course_number,))
-                num_deleted_user_interests *= -1 # A way to indicate that the whole course was deleted from DB.
 
             await conn.commit()
-            return num_deleted_user_interests
+            return remaining_users_interested
     except Exception as e:
         print(f'DB error occurred while attempting to remove a user interest for {course_number}: {e}')
         return None
