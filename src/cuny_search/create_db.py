@@ -5,12 +5,13 @@ async def initialize_tables():
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
         try:
             async with conn.cursor() as cursor:
+                await cursor.execute('PRAGMA foreign_keys=ON')
+
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS course_params (
                         course_number TEXT PRIMARY KEY,
                         session TEXT,
-                        term TEXT,
-                        institution TEXT
+                        term TEXT
                     )
                 """)
                 await cursor.execute("""
@@ -18,12 +19,13 @@ async def initialize_tables():
                         course_number TEXT PRIMARY KEY REFERENCES course_params(course_number) ON DELETE CASCADE,
                         course_name TEXT,
                         days_and_times TEXT,
+                        room TEXT,
                         instructor TEXT,
                         meeting_dates TEXT
                     )
                 """)
                 await cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS course_openings (
+                    CREATE TABLE IF NOT EXISTS course_availabilities (
                         course_number TEXT PRIMARY KEY REFERENCES course_params(course_number) ON DELETE CASCADE,
                         status TEXT,
                         course_capacity TEXT,

@@ -18,11 +18,13 @@ with open(DATA_DIR/"college_codes.yaml", "r") as file:
 def encode_b64(s: str) -> str:
     return b64encode(s.encode()).decode()
 
+
 def get_term_value(year: int, term: str) -> int:
     term_offsets = { "Spring Term": 2, "Summer Term": 6, "Fall Term": 9 }
     return (year-1900)*10 + term_offsets[term]
 
-def scrape(year: int, term: str, course_number: int, session: Optional[str] = None, institution: Optional[str] = None) -> str:
+
+async def scrape(year: int, term: str, course_number: int, session: Optional[str] = None, institution: Optional[str] = None) -> str:
     if not session:
         session = "Regular Academic Session"
     if not institution:
@@ -44,15 +46,10 @@ def scrape(year: int, term: str, course_number: int, session: Optional[str] = No
         "inst_searched": college_b64[institution]
     }
 
-    with httpx.Client(headers=headers) as client:
+    async with httpx.AsyncClient(headers=headers) as client:
         # Initial post to establish session cookies
-        client.post("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", params=term_payload)
-        response = client.get("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", params=class_payload)
+        await client.post("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", params=term_payload)
+        response = await client.get("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", params=class_payload)
 
-        soup = BeautifulSoup(response, "lxml").prettify()
-        with open(DATA_DIR/"output.html", "w") as f:
-            f.write(soup)
+        soup = BeautifulSoup(response.text, "lxml")
     return soup
-
-if __name__ == "__main__":
-    scrape()

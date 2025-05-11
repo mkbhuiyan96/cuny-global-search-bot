@@ -1,6 +1,7 @@
+from bs4 import BeautifulSoup
 import re
 
-def process(soup: str) -> dict:
+def process(soup: BeautifulSoup) -> tuple:
     div = soup.find("div", attrs={"class": "shadowbox"})
     details = div.find("p").get_text(strip=True)
     course_name = details.split(" - ")[0]
@@ -27,18 +28,21 @@ def process(soup: str) -> dict:
     spans = availability_table.find_all("span")
     spans = [span.get_text(strip=True) for span in spans]
 
-    data = {
-        "course_name": course_name,
+    course_details = {
         "course_number": course_number,
-        "status": status,
+        "course_name": course_name,
         "days_and_times": days_and_times,
         "room": room,
         "instructor": instructor,
         "meeting_dates": meeting_dates,
-        "class_capacity": spans[0],
+    }
+    course_availabilities = {
+        "course_number": course_number,
+        "status": status,
+        "course_capacity": spans[0],
         "waitlist_capacity": spans[1],
         "currently_enrolled": spans[2],
         "currently_waitlisted": spans[3],
         "available_seats": spans[4]
     }
-    return data
+    return (course_details, course_availabilities)
