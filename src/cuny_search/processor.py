@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 import re
 
-async def process(soup: BeautifulSoup) -> tuple:
+async def process(soup: BeautifulSoup) -> tuple[dict[str, str], dict[str, str]]:
     div = soup.find("div", attrs={"class": "shadowbox"})
     details = div.find("p").get_text(strip=True)
     course_name = details.split(" - ")[0]

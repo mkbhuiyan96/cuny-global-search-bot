@@ -1,7 +1,7 @@
 from cuny_search import DATA_DIR
 import aiosqlite
 
-async def initialize_tables():
+async def initialize_tables() -> None:
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
         try:
             async with conn.cursor() as cursor:

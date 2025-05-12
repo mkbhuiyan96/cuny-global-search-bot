@@ -7,12 +7,21 @@ from typing import Optional
 
 
 session_b64, college_b64, college_codes = None, None, None
-with open(DATA_DIR/"session_b64.yaml", "r") as file:
-    session_b64 = yaml.safe_load(file)
-with open(DATA_DIR/"college_b64.yaml", "r") as file:
-    college_b64 = yaml.safe_load(file)
-with open(DATA_DIR/"college_codes.yaml", "r") as file:
-    college_codes = yaml.safe_load(file)
+DEFAULT_SESSION = "Regular Academic Session"
+DEFAULT_INSTITUTION = "Queens College"
+
+
+def load_config():
+    global session_b64, college_b64, college_codes
+    if session_b64: # Files already loaded
+        return
+
+    with open(DATA_DIR/"session_b64.yaml", "r") as file:
+        session_b64 = yaml.safe_load(file)
+    with open(DATA_DIR/"college_b64.yaml", "r") as file:
+        college_b64 = yaml.safe_load(file)
+    with open(DATA_DIR/"college_codes.yaml", "r") as file:
+        college_codes = yaml.safe_load(file)
 
 
 def encode_b64(s: str) -> str:
@@ -25,10 +34,11 @@ def get_term_value(year: int, term: str) -> int:
 
 
 async def scrape(year: int, term: str, course_number: int, session: Optional[str] = None, institution: Optional[str] = None) -> BeautifulSoup:
+    load_config()
     if not session:
-        session = "Regular Academic Session"
+        session = DEFAULT_SESSION
     if not institution:
-        institution = "Queens College"
+        institution = DEFAULT_INSTITUTION
     headers = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36" }
     term_code = get_term_value(year, term)
 
@@ -53,3 +63,7 @@ async def scrape(year: int, term: str, course_number: int, session: Optional[str
 
         soup = BeautifulSoup(response.text, "lxml")
     return soup
+
+
+if __name__ == "__main__":
+    load_config()
