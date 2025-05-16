@@ -5,9 +5,9 @@ import aiosqlite
 async def initialize_tables() -> None:
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
         try:
-            async with conn.cursor() as cursor:
-                await cursor.execute("PRAGMA foreign_keys=ON")
+            await conn.execute("PRAGMA foreign_keys=ON")
 
+            async with conn.cursor() as cursor:
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS course_params (
                         course_number TEXT PRIMARY KEY,

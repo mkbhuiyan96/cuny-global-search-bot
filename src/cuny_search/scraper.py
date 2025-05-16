@@ -1,12 +1,11 @@
 from cuny_search.models import CourseParams
 from cuny_search.constants import COLLEGE_CODES, COLLEGE_BASE64, SESSION_BASE64, DEFAULT_INSTITUTION, HEADERS
-import httpx
+from httpx import AsyncClient
 from bs4 import BeautifulSoup
 from base64 import b64encode
 from datetime import datetime
 from dataclasses import astuple
 import asyncio
-
 
 
 def encode_b64(s: str) -> str:
@@ -22,7 +21,6 @@ def get_current_term_and_year() -> tuple[int, str]:
         term = "Summer Term"
     else:
         term = "Fall Term"
-
     return (now.year, term)
 
 
@@ -42,14 +40,14 @@ async def refresh_client():
             year, term = get_current_term_and_year()
             term_code = get_global_search_term_value(year, term)
 
-            payload = {
+            payload: dict[str, str] = {
                 "selectedInstName": f"{DEFAULT_INSTITUTION} |",
                 "inst_selection": COLLEGE_CODES[DEFAULT_INSTITUTION],
                 "selectedTermName": f"{year} {term}",
-                "term_value": term_code,
+                "term_value": str(term_code),
                 "next_btn": "Next",
             }
-            client = httpx.AsyncClient(headers=HEADERS)
+            client = AsyncClient(headers=HEADERS)
 
             await client.post("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", data=payload)
             return client
@@ -58,7 +56,7 @@ async def refresh_client():
             await asyncio.sleep(2)
 
 
-async def scrape(client: httpx.AsyncClient, course_params: CourseParams) -> BeautifulSoup:
+async def scrape(client: AsyncClient, course_params: CourseParams) -> BeautifulSoup:
     course_number, year, term, session, institution = astuple(course_params)
     term_code = get_global_search_term_value(year, term)
 

@@ -14,9 +14,9 @@ class CourseParams:
         self.course_number = int(self.course_number)
         self.year = int(self.year)
 
-        if self.session is None:
+        if not self.session:
             self.session = "Regular Academic Session"
-        if self.institution is None:
+        if not self.institution:
             self.institution = "Queens College"
 
 

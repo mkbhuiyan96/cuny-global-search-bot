@@ -1,6 +1,7 @@
 from cuny_search.models import CourseParams, CourseAvailabilities, CourseDetails, UserInterests
 from aiosqlite import Connection, Row
 from dataclasses import astuple
+from collections.abc import Iterable
 
 
 async def is_database_empty(conn: Connection) -> bool:
@@ -39,15 +40,6 @@ async def add_course_availability(conn: Connection, course_availabilities: Cours
             await conn.commit()
     except Exception as e:
         print(f"DB error occurred while attempting to add course availabilities {course_availabilities}: {e}")
-
-
-async def remove_course(conn: Connection, course_number: int) -> None:
-    try:
-        async with conn.cursor() as cursor:
-            await cursor.execute("DELETE FROM course_params WHERE course_number = ?", (course_number,))
-            await conn.commit()
-    except Exception as e:
-        print(f"DB error occurred while attempting to remove course_number {course_number}: {e}")
 
 
 async def get_course_params(conn: Connection, course_number: int) -> Row | None:
@@ -90,11 +82,16 @@ async def get_course_availability(conn: Connection, course_number: int) -> Row |
         return None
 
 
-async def update_course_availability(conn: Connection, course_availaibilites: CourseAvailabilities) -> None:
+async def update_course_availability(conn: Connection, course_availaibilites: CourseAvailabilities) -> str | None:
     availability_tuple = astuple(course_availaibilites)[1:] + (course_availaibilites.course_number, )
 
     try:
         async with conn.cursor() as cursor:
+            await cursor.execute("""
+                SELECT status FROM course_availabilities WHERE course_number = ?
+            """, (course_availaibilites.course_number,))
+            prev_status = await cursor.fetchone()
+
             await cursor.execute("""
                 UPDATE course_availabilities
                 SET
@@ -107,11 +104,13 @@ async def update_course_availability(conn: Connection, course_availaibilites: Co
                 WHERE course_number = ?
             """, (availability_tuple))
             await conn.commit()
+            return prev_status[0] if prev_status else None
     except Exception as e:
         print(f"Error occurred while trying to update {course_availaibilites}: {e}")
+        return None
 
 
-async def fetch_all_course_params(conn: Connection) -> list[Row]:
+async def fetch_all_course_params(conn: Connection) -> Iterable[Row]:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT * FROM course_params")
@@ -121,7 +120,7 @@ async def fetch_all_course_params(conn: Connection) -> list[Row]:
         return []
 
 
-async def fetch_all_course_numbers_and_names(conn: Connection) -> list[Row]:
+async def fetch_all_course_numbers_and_names(conn: Connection) -> Iterable[Row]:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT course_number, course_name FROM course_details")
@@ -140,7 +139,7 @@ async def add_user_interest(conn: Connection, user_interests: UserInterests) -> 
         print(f"DB error occurred while attempting to add user interest {user_interests}: {e}")
 
 
-async def remove_user_interest(conn: Connection, user_id: str, course_number: int) -> int:
+async def remove_user_interest(conn: Connection, user_id: int, course_number: int) -> int:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("DELETE FROM user_interests WHERE user_id = ? AND course_number = ?", (user_id, course_number))
@@ -148,18 +147,21 @@ async def remove_user_interest(conn: Connection, user_id: str, course_number: in
                 return -1
 
             await cursor.execute("SELECT COUNT(*) FROM user_interests WHERE course_number = ?", (course_number,))
-            (remaining_users_interested, ) = await cursor.fetchone()
-            if remaining_users_interested == 0:
+            remaining_users_interested = await cursor.fetchone()
+            if not remaining_users_interested:
+                return -1
+
+            if remaining_users_interested[0] == 0:
                 await cursor.execute("DELETE FROM course_params WHERE course_number = ?", (course_number,))
 
             await conn.commit()
-            return remaining_users_interested
+            return remaining_users_interested[0]
     except Exception as e:
         print(f"DB error occurred while attempting to remove a user interest for {course_number}: {e}")
         return -1
 
 
-async def is_course_in_user_interests(conn: Connection, course_number: int, user_id: str) -> bool:
+async def is_course_in_user_interests(conn: Connection, course_number: int, user_id: int) -> bool:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute(
@@ -173,7 +175,7 @@ async def is_course_in_user_interests(conn: Connection, course_number: int, user
         return False
 
 
-async def fetch_user_interests(conn: Connection, user_id: str) -> list[Row]:
+async def fetch_user_interests(conn: Connection, user_id: int) -> Iterable[Row]:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("""
@@ -188,7 +190,7 @@ async def fetch_user_interests(conn: Connection, user_id: str) -> list[Row]:
         return []
 
 
-async def fetch_all_users_and_channels_for_course(conn: Connection, course_number: int) -> list[Row]:
+async def fetch_all_users_and_channels_for_course(conn: Connection, course_number: int) -> Iterable[Row]:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT user_id, channel_id FROM user_interests WHERE course_number = ?", (course_number,))
