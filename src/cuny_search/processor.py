@@ -1,7 +1,9 @@
+from cuny_search.models import CourseDetails, CourseAvailabilities
 from bs4 import BeautifulSoup
 import re
 
-async def process(soup: BeautifulSoup) -> tuple[dict[str, str], dict[str, str]]:
+
+def process(soup: BeautifulSoup) -> tuple[CourseDetails, CourseAvailabilities]:
     div = soup.find("div", attrs={"class": "shadowbox"})
     details = div.find("p").get_text(strip=True)
     course_name = details.split(" - ")[0]
@@ -28,21 +30,10 @@ async def process(soup: BeautifulSoup) -> tuple[dict[str, str], dict[str, str]]:
     spans = availability_table.find_all("span")
     spans = [span.get_text(strip=True) for span in spans]
 
-    course_details = {
-        "course_number": course_number,
-        "course_name": course_name,
-        "days_and_times": days_and_times,
-        "room": room,
-        "instructor": instructor,
-        "meeting_dates": meeting_dates,
-    }
-    course_availabilities = {
-        "course_number": course_number,
-        "status": status,
-        "course_capacity": spans[0],
-        "waitlist_capacity": spans[1],
-        "currently_enrolled": spans[2],
-        "currently_waitlisted": spans[3],
-        "available_seats": spans[4]
-    }
+    course_details = CourseDetails(course_number, course_name, days_and_times, room, instructor, meeting_dates)
+    course_availabilities = CourseAvailabilities(course_number, status, spans[0], spans[1], spans[2], spans[3], spans[4])
     return (course_details, course_availabilities)
+
+
+if __name__ == "__main__":
+    pass

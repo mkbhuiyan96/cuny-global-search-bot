@@ -1,17 +1,20 @@
 from cuny_search import DATA_DIR
 import aiosqlite
 
+
 async def initialize_tables() -> None:
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
         try:
             async with conn.cursor() as cursor:
-                await cursor.execute('PRAGMA foreign_keys=ON')
+                await cursor.execute("PRAGMA foreign_keys=ON")
 
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS course_params (
-                        session TEXT,
+                        course_number TEXT PRIMARY KEY,
+                        year TEXT,
                         term TEXT,
-                        course_number TEXT PRIMARY KEY
+                        session TEXT,
+                        institution TEXT
                     )
                 """)
                 await cursor.execute("""
@@ -48,3 +51,7 @@ async def initialize_tables() -> None:
 
         except Exception as e:
             print(f"Error occurred while initializing database: {e}")
+
+
+if __name__ == "__main__":
+    pass

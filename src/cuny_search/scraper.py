@@ -1,69 +1,78 @@
-from cuny_search import DATA_DIR
-import yaml
+from cuny_search.models import CourseParams
+from cuny_search.constants import COLLEGE_CODES, COLLEGE_BASE64, SESSION_BASE64, DEFAULT_INSTITUTION, HEADERS
 import httpx
 from bs4 import BeautifulSoup
 from base64 import b64encode
-from typing import Optional
+from datetime import datetime
+from dataclasses import astuple
+import asyncio
 
-
-session_b64, college_b64, college_codes = None, None, None
-DEFAULT_SESSION = "Regular Academic Session"
-DEFAULT_INSTITUTION = "Queens College"
-
-
-def load_config():
-    global session_b64, college_b64, college_codes
-    if session_b64: # Files already loaded
-        return
-
-    with open(DATA_DIR/"session_b64.yaml", "r") as file:
-        session_b64 = yaml.safe_load(file)
-    with open(DATA_DIR/"college_b64.yaml", "r") as file:
-        college_b64 = yaml.safe_load(file)
-    with open(DATA_DIR/"college_codes.yaml", "r") as file:
-        college_codes = yaml.safe_load(file)
 
 
 def encode_b64(s: str) -> str:
     return b64encode(s.encode()).decode()
 
 
-def get_term_value(year: int, term: str) -> int:
+def get_current_term_and_year() -> tuple[int, str]:
+    now = datetime.now()
+
+    if now.month <= 5:
+        term = "Spring Term"
+    elif now.month <= 8:
+        term = "Summer Term"
+    else:
+        term = "Fall Term"
+
+    return (now.year, term)
+
+
+def get_global_search_term_value(year: int, term: str) -> int:
     term_offsets = { "Spring Term": 2, "Summer Term": 6, "Fall Term": 9 }
     return (year-1900)*10 + term_offsets[term]
 
 
-async def scrape(year: int, term: str, course_number: int, session: Optional[str] = None, institution: Optional[str] = None) -> BeautifulSoup:
-    load_config()
-    if not session:
-        session = DEFAULT_SESSION
-    if not institution:
-        institution = DEFAULT_INSTITUTION
-    headers = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36" }
-    term_code = get_term_value(year, term)
+def get_schedule_builder_term_value(year: int, term: str) -> str:
+    term_map = { "Spring Term": 10, "Summer Term": 20, "Fall Term": 30 }
+    return f"320{year%100}{term_map[term]}"
 
-    term_payload = {
-        "selectedInstName": f"{institution} |",
-        "inst_selection": college_codes[institution],
-        "selectedTermName": f"{year} {term}",
-        "term_value": term_code,
-        "next_btn": "Next",
-    }
-    class_payload = {
+
+async def refresh_client():
+    while True:
+        try:
+            year, term = get_current_term_and_year()
+            term_code = get_global_search_term_value(year, term)
+
+            payload = {
+                "selectedInstName": f"{DEFAULT_INSTITUTION} |",
+                "inst_selection": COLLEGE_CODES[DEFAULT_INSTITUTION],
+                "selectedTermName": f"{year} {term}",
+                "term_value": term_code,
+                "next_btn": "Next",
+            }
+            client = httpx.AsyncClient(headers=HEADERS)
+
+            await client.post("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", data=payload)
+            return client
+        except Exception as e:
+            print(f"Error while trying to create scraper session: {e}")
+            await asyncio.sleep(2)
+
+
+async def scrape(client: httpx.AsyncClient, course_params: CourseParams) -> BeautifulSoup:
+    course_number, year, term, session, institution = astuple(course_params)
+    term_code = get_global_search_term_value(year, term)
+
+    params = {
         "class_number_searched": encode_b64(str(course_number)),
-        "session_searched": session_b64[session],
+        "session_searched": SESSION_BASE64[session],
         "term_searched": encode_b64(str(term_code)),
-        "inst_searched": college_b64[institution]
+        "inst_searched": COLLEGE_BASE64[institution]
     }
 
-    async with httpx.AsyncClient(headers=headers) as client:
-        # Initial post to establish session cookies
-        await client.post("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", params=term_payload)
-        response = await client.get("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", params=class_payload)
-
-        soup = BeautifulSoup(response.text, "lxml")
+    response = await client.get("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", params=params)
+    soup = BeautifulSoup(response.text, "lxml")
     return soup
 
 
 if __name__ == "__main__":
-    load_config()
+    pass

@@ -2,28 +2,38 @@ from dotenv import load_dotenv
 import os
 import aiosqlite
 import discord
+import asyncio
+from random import uniform
 from discord import app_commands
 from discord.ext import commands
 import cuny_search
 from cuny_search import DATA_DIR
 from cuny_search import access_db as db
-from cuny_search.discord_constants import YEARS, TERMS, COURSE_NUMBERS, SESSIONS, INSTITUTIONS
+from cuny_search.models import CourseParams, UserInterests
+from cuny_search.constants import YEARS, TERMS, COURSE_NUMBERS, SESSIONS, INSTITUTIONS, HEADERS
 
 
 class Client(commands.Bot):
+    def __init__(self, *, command_prefix: str, intents: discord.Intents):
+        super().__init__(command_prefix=command_prefix, intents=intents)
+        self.scraper = None
+
     async def setup_hook(self):
-        try:
-            synced = await self.tree.sync()
-            print(f"Synced {len(synced)} commands")
-        except Exception as e:
-            print(f"Error syncing commands: {e}")
+        async for guild in self.fetch_guilds():
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+        self.scraper = await cuny_search.refresh_client()
+        # try:
+        #     synced = await self.tree.sync()
+        #     print(f"Synced {len(synced)} commands!")
+        # except Exception as e:
+        #     print(f"Error syncing commands: {e}")
 
     async def on_ready(self):
-        print(f"Logged on as {self.user}!")
+        print(f"Logged on as {self.user}.")
         await start_monitoring()
 
 
-load_dotenv()
 intents = discord.Intents.default()
 intents.message_content = True
 client = Client(command_prefix="!", intents=intents)
@@ -31,6 +41,46 @@ client = Client(command_prefix="!", intents=intents)
 
 async def start_monitoring():
     await cuny_search.initialize_tables()
+    semaphore = asyncio.Semaphore(5)
+
+    while True:
+        async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
+            if await db.is_database_empty(conn):
+                print("Database is empty. Sleeping for 1 minute.")
+                await asyncio.sleep(60)
+                continue
+
+            all_course_params = None
+            try:
+                all_course_params = await db.fetch_all_course_params(conn)
+            except Exception as e:
+                print(f"Error while trying to fetch all course params: {e}")
+                continue
+
+
+        async def limited_scrape(params):
+            async with semaphore:
+                await asyncio.sleep(uniform(0.01, 0.2))
+                return await cuny_search.scrape(client.scraper, params)
+
+        tasks = [limited_scrape(CourseParams(*params)) for params in all_course_params]
+        soups = await asyncio.gather(*tasks)
+
+        all_course_details, all_course_availabilities = [], []
+        for soup in soups:
+            course_details, course_availabilities = cuny_search.process(soup)
+            all_course_details.append(course_details)
+            all_course_availabilities.append(course_availabilities)
+
+        try:
+            async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
+                for course_availabilities in all_course_availabilities:
+                    await db.update_course_availability(conn, course_availabilities)
+                    print(f"Course availability updated for: {course_availabilities}")
+        except Exception as e:
+            print(f"An error occured while trying to update the course availability: {e}")
+
+        await asyncio.sleep(uniform(1, 7))
 
 
 
@@ -46,31 +96,43 @@ async def add_course(
     session: SESSIONS,
     institution: INSTITUTIONS
 ):
-    course_availability = None
-    crn_string = str(course_number)
-
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
+        already_added = False
         try:
-            course_availability = await db.get_course_availability(conn, crn_string)
+            already_added = await db.is_course_in_user_interests(conn, course_number, interaction.user.id)
+        except Exception as e:
+            print(f"An error occured while trying to access the DB to check if user already added the course: {e}")
+            await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
+            return
+
+        if already_added:
+            await interaction.response.send_message(f"You are already tracking this course!", ephemeral=True)
+            return
+
+        course_params = None
+
+        try:
+            course_params = await db.get_course_params(conn, course_number)
         except Exception as e:
             print(f"An error occured while trying to access the DB to verify course exists: {e}")
             await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
             return
 
-        if not course_availability:
-            course_tuple = tuple(c for c in (year, term, course_number, session, institution) if c)
-
+        if not course_params: # Course wasn't found, need to scrape
+            course_params = CourseParams(course_number, year, term, session, institution)
             try:
-                soup = await cuny_search.scrape(*course_tuple)
-                course_details, course_availabilities = await cuny_search.process(soup)
-                await db.add_course(conn, course_tuple, course_details, course_availabilities)
+                soup = await cuny_search.scrape(client.scraper, course_params)
+                course_details, course_availabilities = cuny_search.process(soup)
+                await db.add_course_params(conn, course_params)
+                await db.add_course_details(conn, course_details)
+                await db.add_course_availability(conn, course_availabilities)
             except Exception as e:
                 print(f"An error occured while trying to add a new course: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                 return
 
         try:
-            await db.add_user_interest(conn, (crn_string, interaction.user.id, interaction.channel.id))
+            await db.add_user_interest(conn, UserInterests(course_number, interaction.user.id, interaction.channel.id))
             await interaction.response.send_message(f"Added {course_number} to your tracked courses.")
         except Exception as e:
             print(f"An error occured while trying to add a new user interest: {e}")
@@ -80,11 +142,11 @@ async def add_course(
 @client.tree.command(name="remove_course", description="Stop tracking a course.")
 @app_commands.describe(course_number="Unique Class Number that can be found on Schedule Builder or Global Search.")
 async def remove_course(interaction: discord.Interaction, course_number: COURSE_NUMBERS):
-    num_remaining = None
+    num_remaining = -1
 
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
         try:
-            num_remaining = await db.remove_user_interest(conn, interaction.user.id, str(course_number))
+            num_remaining = await db.remove_user_interest(conn, interaction.user.id, course_number)
             if num_remaining == -1:
                 raise ValueError("Was not able to successfully select a row during deletion")
         except Exception as e:
@@ -105,14 +167,14 @@ async def get_course_availability(interaction: discord.Interaction, course_numbe
 
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
         try:
-            course_availability = await db.get_course_availability(conn, str(course_number))
+            course_availability = await db.get_course_availability(conn, course_number)
         except Exception as e:
             print(f"An error occured while trying to access the DB for course availability: {e}")
             await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
             return
 
     if course_availability:
-        status, course_capacity, waitlist_capacity, currently_enrolled, currently_waitlisted, available_seats = course_availability[4:]
+        status, course_capacity, waitlist_capacity, currently_enrolled, currently_waitlisted, available_seats = course_availability[6:]
 
         if status == "Open":
             status_color = "\033[1;32m"
@@ -142,14 +204,14 @@ async def get_course_details(interaction: discord.Interaction, course_number: CO
 
     async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
         try:
-            course_details = await db.get_course_details(conn, str(course_number))
+            course_details = await db.get_course_details(conn, course_number)
         except Exception as e:
             print(f"An error occured while trying to access the DB for course availability: {e}")
             await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
             return
 
     if course_details:
-        course_name, days_and_times, room, instructor, meeting_dates, = course_details[4:]
+        course_name, days_and_times, room, instructor, meeting_dates, = course_details[6:]
         message = (
             f"\033[1;36mClass:\033[0m {course_name}-\u001b[34m{course_number}\u001b[0m\n"
             f"\033[1;36mRoom:\033[0m {room}\n"
@@ -175,9 +237,9 @@ async def get_my_tracked_courses(interaction: discord.Interaction):
                     professor = row[7] if row[7] else "No professor assigned"
 
                     lines.append(
-                        f"\u001b[36mClass:\u001b[0m {course_name}-\u001b[34m{course_number}\u001b[0m\n"
-                        f"  \u001b[36mDays & Times:\u001b[0m {days_and_times}\n"
-                        f"  \u001b[36mInstructor:\u001b[0m {professor}"
+                        f"\u001b[1;36mClass:\u001b[0m {course_name}-\u001b[34m{course_number}\u001b[0m\n"
+                        f"  \u001b[1;36mDays & Times:\u001b[0m {days_and_times}\n"
+                        f"  \u001b[1;36mInstructor:\u001b[0m {professor}"
                     )
 
                 ansi_block = "```ansi\n" + "\n\n".join(lines) + "\n```"
@@ -209,6 +271,7 @@ async def fetch_all_courses_tracked_by_bot(interaction: discord.Interaction):
 
 
 def start_bot():
+    load_dotenv()
     client.run(os.getenv("DISCORD_TOKEN"))
 
 
