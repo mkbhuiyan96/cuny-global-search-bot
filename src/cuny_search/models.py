@@ -1,19 +1,35 @@
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
 
 
+def get_current_term_and_year() -> tuple[int, str]:
+    now = datetime.now()
+
+    if now.month <= 5:
+        term = "Spring Term"
+    elif now.month <= 8:
+        term = "Summer Term"
+    else:
+        term = "Fall Term"
+    return (now.year, term)
+
 @dataclass
 class CourseParams:
     course_number: int
-    year: int
-    term: str
+    year: Optional[int] = None
+    term: Optional[str] = None
     session: Optional[str] = None
     institution: Optional[str] = None
 
     def __post_init__(self):
         self.course_number = int(self.course_number)
-        self.year = int(self.year)
 
+        default_year, default_term = get_current_term_and_year()
+        self.year = int(self.year) if self.year else default_year
+
+        if not self.term:
+            self.term = default_term
         if not self.session:
             self.session = "Regular Academic Session"
         if not self.institution:

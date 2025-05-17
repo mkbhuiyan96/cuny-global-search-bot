@@ -2,9 +2,9 @@ from typing import Literal, Optional
 from discord import app_commands
 
 # Discord Constants
-YEARS = app_commands.Range[int, 2025, 2125]
-TERMS = Literal["Spring Term", "Summer Term", "Fall Term"]
 COURSE_NUMBERS = app_commands.Range[int, 1000, 99999]
+YEARS = Optional[app_commands.Range[int, 2025, 2125]]
+TERMS = Optional[Literal["Spring Term", "Summer Term", "Fall Term"]]
 
 SESSIONS = Optional[
     Literal[

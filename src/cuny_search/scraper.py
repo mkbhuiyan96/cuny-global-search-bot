@@ -1,27 +1,14 @@
-from cuny_search.models import CourseParams
-from cuny_search.constants import COLLEGE_CODES, COLLEGE_BASE64, SESSION_BASE64, DEFAULT_INSTITUTION, HEADERS
-from httpx import AsyncClient
-from bs4 import BeautifulSoup
-from base64 import b64encode
-from datetime import datetime
-from dataclasses import astuple
 import asyncio
+from base64 import b64encode
+from dataclasses import astuple
+from bs4 import BeautifulSoup
+from httpx import AsyncClient
+from cuny_search.constants import COLLEGE_CODES, COLLEGE_BASE64, SESSION_BASE64, DEFAULT_INSTITUTION, HEADERS
+from cuny_search.models import CourseParams, get_current_term_and_year
 
 
 def encode_b64(s: str) -> str:
     return b64encode(s.encode()).decode()
-
-
-def get_current_term_and_year() -> tuple[int, str]:
-    now = datetime.now()
-
-    if now.month <= 5:
-        term = "Spring Term"
-    elif now.month <= 8:
-        term = "Summer Term"
-    else:
-        term = "Fall Term"
-    return (now.year, term)
 
 
 def get_global_search_term_value(year: int, term: str) -> int:

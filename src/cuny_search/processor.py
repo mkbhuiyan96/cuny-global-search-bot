@@ -1,7 +1,7 @@
-from cuny_search.models import CourseDetails, CourseAvailabilities
-from bs4 import BeautifulSoup, Tag, NavigableString
 import re
 from typing import Any
+from bs4 import BeautifulSoup, Tag, NavigableString
+from cuny_search.models import CourseDetails, CourseAvailabilities
 
 
 def safe_find(soup: BeautifulSoup, tag: str, *args: Any, **kwargs: Any) -> Tag | NavigableString:

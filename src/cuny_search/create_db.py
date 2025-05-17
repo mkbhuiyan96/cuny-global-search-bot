@@ -1,5 +1,5 @@
-from cuny_search import DATA_DIR
 import aiosqlite
+from cuny_search import DATA_DIR
 
 
 async def initialize_tables() -> None:

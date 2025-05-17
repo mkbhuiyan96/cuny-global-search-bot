@@ -1,7 +1,7 @@
-from cuny_search.models import CourseParams, CourseAvailabilities, CourseDetails, UserInterests
-from aiosqlite import Connection, Row
-from dataclasses import astuple
 from collections.abc import Iterable
+from dataclasses import astuple
+from aiosqlite import Connection, Row
+from cuny_search.models import CourseParams, CourseAvailabilities, CourseDetails, UserInterests
 
 
 async def is_database_empty(conn: Connection) -> bool:

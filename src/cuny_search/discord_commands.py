@@ -1,10 +1,10 @@
-from discord import app_commands, Interaction
-from discord.ext import commands
 import aiosqlite
-from cuny_search import DATA_DIR, scrape, process
-from cuny_search.models import CourseParams, UserInterests
-from cuny_search.constants import YEARS, TERMS, COURSE_NUMBERS, SESSIONS, INSTITUTIONS
+from discord import Interaction, app_commands
+from discord.ext import commands
+from cuny_search import DATA_DIR, process, scrape
 from cuny_search import access_db as db
+from cuny_search.constants import YEARS, TERMS, COURSE_NUMBERS, SESSIONS, INSTITUTIONS
+from cuny_search.models import CourseParams, UserInterests
 
 
 class CourseCommands(commands.Cog):
@@ -12,10 +12,12 @@ class CourseCommands(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="add_course", description="Adds a course to be tracked by the bot.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Schedule Builder or Global Search.")
+    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
+    @app_commands.describe(year="Defaults to current year.")
+    @app_commands.describe(term="Defaults to current term.")
     @app_commands.describe(session="Typically required for Summer or Winter courses. Defaults to Regular Academic Session.")
-    @app_commands.describe(institution="Name of the college, defaults to Queens College.")
-    async def add_course(self, interaction: Interaction, year: YEARS, term: TERMS, course_number: COURSE_NUMBERS, session: SESSIONS, institution: INSTITUTIONS):
+    @app_commands.describe(institution="Name of the college. Defaults to Queens College.")
+    async def add_course(self, interaction: Interaction, course_number: COURSE_NUMBERS, year: YEARS, term: TERMS, session: SESSIONS, institution: INSTITUTIONS):
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
             already_added = False
@@ -66,7 +68,7 @@ class CourseCommands(commands.Cog):
 
 
     @app_commands.command(name="remove_course", description="Stop tracking a course.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Schedule Builder or Global Search.")
+    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
     async def remove_course(self, interaction: Interaction, course_number: COURSE_NUMBERS):
         num_remaining = -1
 
@@ -89,7 +91,7 @@ class CourseCommands(commands.Cog):
 
 
     @app_commands.command(name="get_course_availability", description="Returns status of course and number of seats.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Schedule Builder or Global Search.")
+    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
     async def get_course_availability(self, interaction: Interaction, course_number: COURSE_NUMBERS):
         course_availability = None
 
@@ -127,8 +129,8 @@ class CourseCommands(commands.Cog):
             await interaction.response.send_message("Class not found in database!")
 
 
-    @app_commands.command(name="get_course_details", description="Returns information such as time and professor for course provided.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Schedule Builder or Global Search.")
+    @app_commands.command(name="get_course_details", description="Returns information such as meet times and professor.")
+    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
     async def get_course_details(self, interaction: Interaction, course_number: COURSE_NUMBERS):
         course_details = None
 
@@ -185,7 +187,7 @@ class CourseCommands(commands.Cog):
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
 
 
-    @app_commands.command(name="fetch_all_courses_tracked_by_bot", description="Returns a list of all the courses the bot is tracking for everyone.")
+    @app_commands.command(name="fetch_all_courses_tracked_by_bot", description="Returns all the courses the bot is tracking for everyone.")
     async def fetch_all_courses_tracked_by_bot(self, interaction: Interaction):
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")

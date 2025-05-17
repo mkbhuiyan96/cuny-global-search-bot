@@ -1,37 +1,34 @@
-from dotenv import load_dotenv
+import asyncio
 import os
+from random import uniform
+from typing import NoReturn
+from dotenv import load_dotenv
 import aiosqlite
 import discord
-import asyncio
-from random import uniform
 from discord.ext import commands
+from httpx import AsyncClient
+from bs4 import BeautifulSoup
 from cuny_search import DATA_DIR, refresh_client, initialize_tables, scrape, process
 from cuny_search import access_db as db
 from cuny_search.models import CourseParams, CourseDetails, CourseAvailabilities
-from httpx import AsyncClient
 
 
 class Client(commands.Bot):
-    def __init__(self, *, command_prefix: str, intents: discord.Intents):
+    def __init__(self, *, command_prefix: str, intents: discord.Intents) -> None:
         super().__init__(command_prefix=command_prefix, intents=intents)
         self.scraper = AsyncClient()
         self.semaphore = asyncio.Semaphore(5)
 
-    async def setup_hook(self):
+    async def setup_hook(self) -> None:
         await self.load_extension("cuny_search.discord_commands")
-
         async for guild in self.fetch_guilds():
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
+
+        # await self.tree.sync()  # Syncs the commands globally (has a limit on how often this can be done)
         self.scraper = await refresh_client()
 
-        # try:
-        #     synced = await self.tree.sync()
-        #     print(f"Synced {len(synced)} commands!")
-        # except Exception as e:
-        #     print(f"Error syncing commands: {e}")
-
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         print(f"Logged on as {self.user}.")
         await start_monitoring()
 
@@ -41,13 +38,13 @@ intents.message_content = True
 client = Client(command_prefix="!", intents=intents)
 
 
-def status_changed(prev_status: str, new_status: str):
+def status_changed(prev_status: str, new_status: str) -> bool:
     if prev_status == new_status:
         return False
     return "Open" in (prev_status, new_status)
 
 
-async def limited_scrape(params: CourseParams):
+async def limited_scrape(params: CourseParams) -> BeautifulSoup:
     try:
         async with client.semaphore:
             await asyncio.sleep(uniform(0.01, 0.2))
@@ -57,7 +54,7 @@ async def limited_scrape(params: CourseParams):
         client.scraper = await refresh_client()
 
 
-async def start_monitoring():
+async def start_monitoring() -> NoReturn:
     await initialize_tables()
 
     while True:
