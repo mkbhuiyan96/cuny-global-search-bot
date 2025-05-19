@@ -1,39 +1,51 @@
-from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
+from cuny_search.constants import SESSION_BASE64, COLLEGE_BASE64
+from cuny_search.utils import get_current_term_and_year, get_global_search_term_value, encode_b64
 
 
-def get_current_term_and_year() -> tuple[int, str]:
-    now = datetime.now()
+class CourseParams:
+    def __init__(
+        self,
+        course_number: int,
+        term: Optional[str] = None,
+        year: Optional[int] = None,
+        session: Optional[str] = None,
+        institution: Optional[str] = None
+    ):
+        self.course_number = str(course_number)
 
-    if now.month <= 5:
-        term = "Spring Term"
-    elif now.month <= 8:
-        term = "Summer Term"
-    else:
-        term = "Fall Term"
-    return (now.year, term)
+        current_year, current_term = get_current_term_and_year()
+        self.year = int(year) if year is not None else current_year
+        self.term = term or current_term
+        self.term_code = str(get_global_search_term_value(self.year, self.term))
+
+        self.session = session or "Regular Academic Session"
+        self.institution = institution or "Queens College"
+
+    def get_encoded_params(self) -> dict[str, str]:
+        return {
+            "class_number_searched": encode_b64(self.course_number),
+            "session_searched": SESSION_BASE64[self.session],
+            "term_searched": encode_b64(self.term_code),
+            "inst_searched": COLLEGE_BASE64[self.institution]
+        }
+
+    def get_encoded_tuple(self) -> tuple[str, str, str, str]:
+        return (
+            encode_b64(self.course_number),
+            SESSION_BASE64[self.session],
+            encode_b64(self.term_code),
+            COLLEGE_BASE64[self.institution]
+        )
+
 
 @dataclass
-class CourseParams:
-    course_number: int
-    year: Optional[int] = None
-    term: Optional[str] = None
-    session: Optional[str] = None
-    institution: Optional[str] = None
-
-    def __post_init__(self):
-        self.course_number = int(self.course_number)
-
-        default_year, default_term = get_current_term_and_year()
-        self.year = int(self.year) if self.year else default_year
-
-        if not self.term:
-            self.term = default_term
-        if not self.session:
-            self.session = "Regular Academic Session"
-        if not self.institution:
-            self.institution = "Queens College"
+class EncodedParams:
+    class_number_searched: str
+    session_searched: str
+    term_searched: str
+    inst_searched: str
 
 
 @dataclass
@@ -48,7 +60,6 @@ class CourseDetails:
 
 @dataclass
 class CourseAvailabilities:
-    course_number: int
     status: str
     course_capacity: str
     waitlist_capacity: str
@@ -56,8 +67,9 @@ class CourseAvailabilities:
     currently_waitlisted: str
     available_seats: str
 
+
 @dataclass
 class UserInterests:
-    course_number: int
+    uid: int
     user_id: int
     channel_id: int

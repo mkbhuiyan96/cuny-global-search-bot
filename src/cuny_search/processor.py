@@ -10,11 +10,19 @@ def safe_find(soup: BeautifulSoup, tag: str, *args: Any, **kwargs: Any) -> Tag |
         raise ValueError(f"Could not find tag: {tag} with {kwargs}")
     return result
 
-def safe_find_next(soup: BeautifulSoup, el: Tag, *args: Any, **kwargs: Any) -> Tag | NavigableString:
+
+def safe_find_next(el: Tag, *args: Any, **kwargs: Any) -> Tag | NavigableString:
     result = el.find_next(*args, **kwargs)
     if not result:
         raise ValueError(f"Could not find next tag from element: {el} with {kwargs}")
     return result
+
+
+def get_data_label(soup: BeautifulSoup, label: str) -> str:
+    td = soup.find("td", attrs={"data-label": label})
+    if not td:
+        raise ValueError(f"Could not find <td> with data-label '{label}'")
+    return td.get_text(strip=True)
 
 
 def process(soup: BeautifulSoup) -> tuple[CourseDetails, CourseAvailabilities]:
@@ -27,9 +35,9 @@ def process(soup: BeautifulSoup) -> tuple[CourseDetails, CourseAvailabilities]:
     course_name = details.split(" - ")[0]
 
     td = safe_find(soup, "td", string=re.compile("Class Number"))
-    course_number = safe_find_next(soup, td).get_text(strip=True)
+    course_number = safe_find_next(td).get_text(strip=True)
 
-    img_td = soup.find("img", title=["Open", "Closed", "Wait"])
+    img_td = soup.find("img", title=re.compile("Open|Closed|Wait"))
     if not img_td:
         raise ValueError("Could not find <img> with status title")
 
@@ -38,16 +46,10 @@ def process(soup: BeautifulSoup) -> tuple[CourseDetails, CourseAvailabilities]:
         raise ValueError("Could not find parent <td> of status <img>")
     status = status_td.get_text(strip=True)
 
-    def get_data_label(label: str):
-        td = soup.find("td", attrs={"data-label": label})
-        if not td:
-            raise ValueError(f"Could not find <td> with data-label '{label}'")
-        return td.get_text(strip=True)
-
-    days_and_times = get_data_label("Days And Times")
-    room = get_data_label("Room")
-    instructor = get_data_label("Instructor")
-    meeting_dates = get_data_label("Meeting Dates")
+    days_and_times = get_data_label(soup, "Days And Times")
+    room = get_data_label(soup, "Room")
+    instructor = get_data_label(soup, "Instructor")
+    meeting_dates = get_data_label(soup, "Meeting Dates")
 
     availability_header = soup.find("b", string=re.compile("Class Availability"))
     if not availability_header:
@@ -72,7 +74,6 @@ def process(soup: BeautifulSoup) -> tuple[CourseDetails, CourseAvailabilities]:
     )
 
     course_availabilities = CourseAvailabilities(
-        course_number=course_number,
         status=status,
         course_capacity=span_values[0],
         waitlist_capacity=span_values[1],
@@ -81,7 +82,7 @@ def process(soup: BeautifulSoup) -> tuple[CourseDetails, CourseAvailabilities]:
         available_seats=span_values[4]
     )
 
-    return course_details, course_availabilities
+    return (course_details, course_availabilities)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 import aiosqlite
 from discord import Interaction, app_commands
 from discord.ext import commands
+from icecream import ic
 from cuny_search import DATA_DIR, process, scrape
 from cuny_search import access_db as db
-from cuny_search.constants import YEARS, TERMS, COURSE_NUMBERS, SESSIONS, INSTITUTIONS
+from cuny_search.constants import AMBIGUOUS, COURSE_NUMBERS, INSTITUTIONS, NOT_FOUND, SESSIONS, TERMS, YEARS
 from cuny_search.models import CourseParams, UserInterests
 
 
@@ -12,75 +13,79 @@ class CourseCommands(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="add_course", description="Adds a course to be tracked by the bot.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
-    @app_commands.describe(year="Defaults to current year.")
+    @app_commands.describe(course_number="Class number that can be found on Global Search or Schedule Builder.")
     @app_commands.describe(term="Defaults to current term.")
-    @app_commands.describe(session="Typically required for Summer or Winter courses. Defaults to Regular Academic Session.")
-    @app_commands.describe(institution="Name of the college. Defaults to Queens College.")
-    async def add_course(self, interaction: Interaction, course_number: COURSE_NUMBERS, year: YEARS, term: TERMS, session: SESSIONS, institution: INSTITUTIONS):
+    @app_commands.describe(year="Defaults to current year.")
+    @app_commands.describe(session="Typically required for Summer or Winter courses. Defaults to 'Regular Academic Session'.")
+    @app_commands.describe(institution="Name of the college. Defaults to 'Queens College'.")
+    async def add_course(self, interaction: Interaction, course_number: COURSE_NUMBERS, term: TERMS, year: YEARS, institution: INSTITUTIONS, session: SESSIONS) -> None:
+        course_params = CourseParams(course_number, term, year, session, institution)
+
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
-            already_added = False
 
             try:
-                already_added = await db.is_course_in_user_interests(conn, course_number, interaction.user.id)
+                uid, is_newly_created = await db.get_or_create_uid(conn, course_params)
             except Exception as e:
-                print(f"An error occured while trying to access the DB to check if user already added the course: {e}")
+                ic(f"An error occured while trying to access the DB to verify course exists: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                 return
 
-            if already_added:
-                await interaction.response.send_message(f"You are already tracking this course!", ephemeral=True)
-                return
+            if not is_newly_created:
+                is_already_added = False
 
-            course_params = None
-
-            try:
-                course_params = await db.get_course_params(conn, course_number)
-            except Exception as e:
-                print(f"An error occured while trying to access the DB to verify course exists: {e}")
-                await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
-                return
-
-            if not course_params: # Course wasn't found, need to scrape
-                course_params = CourseParams(course_number, year, term, session, institution)
                 try:
-                    soup = await scrape(self.bot.scraper, course_params)
-                    course_details, course_availabilities = process(soup)
-
-                    if course_details.course_number != str(course_number):
-                        raise ValueError(f"Mismatched course number: expected {course_number}, got {course_details.course_number}. Most likely malformed course info.")
-
-                    await db.add_course_params(conn, course_params)
-                    await db.add_course_details(conn, course_details)
-                    await db.add_course_availability(conn, course_availabilities)
+                    is_already_added = await db.is_course_in_user_interests(conn, uid, interaction.user.id)
                 except Exception as e:
-                    print(f"An error occured while trying to add a new course: {e}")
+                    ic(f"An error occured while trying to access the DB to check if user already added the course: {e}")
                     await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                     return
 
+                if is_already_added:
+                    await interaction.response.send_message(f"You are already tracking this course!", ephemeral=True)
+                    return
+
             try:
-                await db.add_user_interest(conn, UserInterests(course_number, interaction.user.id, interaction.channel.id))
+                soup = await scrape(self.bot.scraper, course_params)
+                course_details, course_availabilities = process(soup)
+
+                if course_details.course_number != str(course_number):
+                    raise ValueError(f"Mismatched course number: expected {course_number}, got {course_details.course_number}. Most likely malformed course info.")
+
+                await db.add_course_details(conn, uid, course_details)
+                await db.add_course_availability(conn, uid, course_availabilities)
+            except Exception as e:
+                ic(f"An error occured while trying to add a new course: {e}")
+                await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
+                await self.bot.refresh_scraper()
+                return
+
+            try:
+                await db.add_user_interest(conn, UserInterests(uid, interaction.user.id, interaction.channel.id))
                 await interaction.response.send_message(f"Added {course_number} to your tracked courses.")
             except Exception as e:
-                print(f"An error occured while trying to add a new user interest: {e}")
+                ic(f"An error occured while trying to add a new user interest: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
 
 
     @app_commands.command(name="remove_course", description="Stop tracking a course.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
-    async def remove_course(self, interaction: Interaction, course_number: COURSE_NUMBERS):
-        num_remaining = -1
+    @app_commands.describe(course_number="Class Number that can be found on Global Search or Schedule Builder.")
+    async def remove_course(self, interaction: Interaction, course_number: COURSE_NUMBERS, term: TERMS, year: YEARS, institution: INSTITUTIONS, session: SESSIONS) -> None:
+        course_params = CourseParams(course_number, term, year, session, institution)
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
 
             try:
-                num_remaining = await db.remove_user_interest(conn, interaction.user.id, course_number)
-                if num_remaining == -1:
-                    raise ValueError("Was not able to successfully select a row during deletion")
+                num_remaining = await db.remove_user_interest(conn, course_params, interaction.user.id)
+                if num_remaining == AMBIGUOUS:
+                    await interaction.response.send_message("Multiple classes found with that course number, please fill out full details.")
+                    return
+
+                if num_remaining == NOT_FOUND:
+                    raise ValueError("Did not find course when querying database.")
             except Exception as e:
-                print(f"An error occured while accessing the DB to remove a course: {e}")
+                ic(f"An error occured while accessing the DB to remove a course: {e}")
                 await interaction.response.send_message(f"An error occured: {e}", ephemeral=True)
                 return
 
@@ -91,8 +96,8 @@ class CourseCommands(commands.Cog):
 
 
     @app_commands.command(name="get_course_availability", description="Returns status of course and number of seats.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
-    async def get_course_availability(self, interaction: Interaction, course_number: COURSE_NUMBERS):
+    @app_commands.describe(course_number="Class number that can be found on Global Search or Schedule Builder.")
+    async def get_course_availability(self, interaction: Interaction, course_number: COURSE_NUMBERS) -> None:
         course_availability = None
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
@@ -101,7 +106,7 @@ class CourseCommands(commands.Cog):
             try:
                 course_availability = await db.get_course_availability(conn, course_number)
             except Exception as e:
-                print(f"An error occured while trying to access the DB for course availability: {e}")
+                ic(f"An error occured while trying to access the DB for course availability: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                 return
 
@@ -130,8 +135,8 @@ class CourseCommands(commands.Cog):
 
 
     @app_commands.command(name="get_course_details", description="Returns information such as meet times and professor.")
-    @app_commands.describe(course_number="Unique Class Number that can be found on Global Search or Schedule Builder.")
-    async def get_course_details(self, interaction: Interaction, course_number: COURSE_NUMBERS):
+    @app_commands.describe(course_number="Class number that can be found on Global Search or Schedule Builder.")
+    async def get_course_details(self, interaction: Interaction, course_number: COURSE_NUMBERS) -> None:
         course_details = None
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
@@ -140,7 +145,7 @@ class CourseCommands(commands.Cog):
             try:
                 course_details = await db.get_course_details(conn, course_number)
             except Exception as e:
-                print(f"An error occured while trying to access the DB for course availability: {e}")
+                ic(f"An error occured while trying to access the DB for course availability: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                 return
 
@@ -158,7 +163,7 @@ class CourseCommands(commands.Cog):
 
 
     @app_commands.command(name="get_my_tracked_courses", description="Returns all the courses you are tracking.")
-    async def get_my_tracked_courses(self, interaction: Interaction):
+    async def get_my_tracked_courses(self, interaction: Interaction) -> None:
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
 
@@ -183,12 +188,12 @@ class CourseCommands(commands.Cog):
                 else:
                     await interaction.response.send_message("You aren't tracking any courses!", ephemeral=True)
             except Exception as e:
-                print(f"An error occured while trying to access the DB to get {interaction.user.id}'s tracked courses: {e}")
+                ic(f"An error occured while trying to access the DB to get {interaction.user.id}'s tracked courses: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
 
 
     @app_commands.command(name="fetch_all_courses_tracked_by_bot", description="Returns all the courses the bot is tracking for everyone.")
-    async def fetch_all_courses_tracked_by_bot(self, interaction: Interaction):
+    async def fetch_all_courses_tracked_by_bot(self, interaction: Interaction) -> None:
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
 
@@ -204,11 +209,11 @@ class CourseCommands(commands.Cog):
                 else:
                     await interaction.response.send_message("No courses are being tracked by the bot!")
             except Exception as e:
-                print(f"An error occured while trying to access the DB to get all courses: {e}")
+                ic(f"An error occured while trying to access the DB to get all courses: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(CourseCommands(bot))
 
 

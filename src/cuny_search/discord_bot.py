@@ -4,20 +4,26 @@ from random import uniform
 from typing import NoReturn
 from dotenv import load_dotenv
 import aiosqlite
+from bs4 import BeautifulSoup
 import discord
 from discord.ext import commands
-from httpx import AsyncClient
-from bs4 import BeautifulSoup
+from icecream import ic
 from cuny_search import DATA_DIR, refresh_client, initialize_tables, scrape, process
 from cuny_search import access_db as db
-from cuny_search.models import CourseParams, CourseDetails, CourseAvailabilities
+from cuny_search.models import CourseDetails, CourseAvailabilities, EncodedParams
 
 
 class Client(commands.Bot):
     def __init__(self, *, command_prefix: str, intents: discord.Intents) -> None:
         super().__init__(command_prefix=command_prefix, intents=intents)
-        self.scraper = AsyncClient()
+        self.scraper = None
         self.semaphore = asyncio.Semaphore(5)
+
+    async def refresh_scraper(self) -> None:
+        if not self.scraper.is_closed:
+            await self.scraper.aclose()
+        self.scraper = await refresh_client()
+        ic("Refreshed scraper client")
 
     async def setup_hook(self) -> None:
         await self.load_extension("cuny_search.discord_commands")
@@ -26,10 +32,9 @@ class Client(commands.Bot):
             await self.tree.sync(guild=guild)
 
         # await self.tree.sync()  # Syncs the commands globally (has a limit on how often this can be done)
-        self.scraper = await refresh_client()
 
     async def on_ready(self) -> None:
-        print(f"Logged on as {self.user}.")
+        ic(f"Logged on as {self.user}.")
         await start_monitoring()
 
 
@@ -44,70 +49,76 @@ def status_changed(prev_status: str, new_status: str) -> bool:
     return "Open" in (prev_status, new_status)
 
 
-async def limited_scrape(params: CourseParams) -> BeautifulSoup:
-    try:
-        async with client.semaphore:
-            await asyncio.sleep(uniform(0.01, 0.2))
-            return await scrape(client.scraper, params)
-    except Exception as e:
-        print(f"Error while trying to scrape all courses for availability: {e}")
-        client.scraper = await refresh_client()
-
-
 async def start_monitoring() -> NoReturn:
     await initialize_tables()
+    client.scraper = await refresh_client()
 
     while True:
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
 
             if await db.is_database_empty(conn):
-                print("Database is empty. Sleeping for 1 minute.")
+                ic("Database is empty. Sleeping for 1 minute.")
                 await asyncio.sleep(60)
                 continue
 
-            all_course_params = None
             try:
                 all_course_params = await db.fetch_all_course_params(conn)
             except Exception as e:
-                print(f"Error while trying to fetch all course params: {e}")
+                ic(f"Error while trying to fetch all course params: {e}")
                 continue
 
-        tasks = [limited_scrape(CourseParams(*params)) for params in all_course_params]
-        soups = await asyncio.gather(*tasks)
+        uid_soup_pairs = []
+        for uid, *encoded_params in all_course_params:
+            async with client.semaphore:
+                try:
+                    await asyncio.sleep(uniform(0.01, 0.2))
+                    soup = await scrape(client.scraper, EncodedParams(*encoded_params))
+                    if soup:
+                        uid_soup_pairs.append((uid, soup))
+                except Exception as e:
+                    ic(f"Scrape failed for uid={uid}: {e}")
+                    await client.refresh_scraper()
 
-        all_processed_data: list[tuple[CourseDetails, CourseAvailabilities]] = []
-        for soup in soups:
-            if soup:
-                all_processed_data.append(process(soup))
+        all_processed_data: list[tuple[int, CourseDetails, CourseAvailabilities]] = []
+        for uid, soup in uid_soup_pairs:
+            try:
+                course_details, course_availabilities = process(soup)
+                all_processed_data.append((uid, course_details, course_availabilities))
+            except Exception as e:
+                ic(f"Processing failed for uid={uid}: {e}")
 
         try:
             async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
                 await conn.execute("PRAGMA foreign_keys=ON")
 
-                for course_details, course_availabilities in all_processed_data:
-                    prev_status = await db.update_course_availability(conn, course_availabilities)
+                for uid, course_details, course_availabilities in all_processed_data:
+                    prev_status = await db.update_course_availability(conn, uid, course_availabilities)
 
                     if prev_status and status_changed(prev_status, course_availabilities.status):
-                        all_users_and_channels = await db.fetch_all_users_and_channels_for_course(conn, course_availabilities.course_number)
+                        all_users_and_channels = await db.fetch_all_users_and_channels_for_course(conn, uid)
 
                         for user_id, channel_id in all_users_and_channels:
                             channel = client.get_channel(int(channel_id))
                             if not channel:
                                 channel = await client.fetch_channel(int(channel_id))
                             await channel.send(f"<@{user_id}>, {course_details.course_name}-{course_details.course_number} is now {course_availabilities.status}!")
-                            print(f'Notified {user_id} in {channel_id} about {course_details.course_name}-{course_details.course_number} being {course_availabilities.status}.')
+                            ic(f"Notified {user_id} in {channel_id} about {course_details.course_name}-{course_details.course_number} being {course_availabilities.status}.")
 
-                    print(f"Course availability updated for: {course_availabilities}")
+                    ic(f"Course availability updated for: UID: {uid}, {course_details}, {course_availabilities}")
         except Exception as e:
-            print(f"An error occured while trying to update the course availability: {e}")
+            ic(f"An error occured while trying to update the course availability: {e}")
 
-        await asyncio.sleep(uniform(1, 7))
+        await asyncio.sleep(uniform(3, 8))
 
 
-def start_bot():
+def start_bot() -> None:
     load_dotenv()
-    client.run(os.getenv("DISCORD_TOKEN"))
+    token = os.getenv("DISCORD_TOKEN")
+    if token:
+        client.run(token)
+    else:
+        ic("Discord token not found! Cannot start bot.")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import aiosqlite
+from icecream import ic
 from cuny_search import DATA_DIR
 
 
@@ -10,16 +11,18 @@ async def initialize_tables() -> None:
             async with conn.cursor() as cursor:
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS course_params (
-                        course_number TEXT PRIMARY KEY,
-                        year TEXT,
-                        term TEXT,
-                        session TEXT,
-                        institution TEXT
+                        uid INTEGER PRIMARY KEY,
+                        course_base64 TEXT NOT NULL,
+                        session TEXT NOT NULL,
+                        term_code TEXT NOT NULL,
+                        institution TEXT NOT NULL,
+                        UNIQUE (course_base64, session, term_code, institution)
                     )
                 """)
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS course_details (
-                        course_number TEXT PRIMARY KEY REFERENCES course_params(course_number) ON DELETE CASCADE,
+                        uid INTEGER PRIMARY KEY REFERENCES course_params(uid) ON DELETE CASCADE,
+                        course_number TEXT,
                         course_name TEXT,
                         days_and_times TEXT,
                         room TEXT,
@@ -29,8 +32,8 @@ async def initialize_tables() -> None:
                 """)
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS course_availabilities (
-                        course_number TEXT PRIMARY KEY REFERENCES course_params(course_number) ON DELETE CASCADE,
-                        status TEXT,
+                        uid INTEGER PRIMARY KEY REFERENCES course_params(uid) ON DELETE CASCADE,
+                        status TEXT NOT NULL,
                         course_capacity TEXT,
                         waitlist_capacity TEXT,
                         currently_enrolled TEXT,
@@ -40,17 +43,17 @@ async def initialize_tables() -> None:
                 """)
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS user_interests (
-                        course_number TEXT REFERENCES course_params(course_number) ON DELETE CASCADE,
-                        user_id TEXT,
-                        channel_id TEXT,
-                        PRIMARY KEY (user_id, course_number)
+                        uid INTEGER REFERENCES course_params(uid) ON DELETE CASCADE,
+                        user_id TEXT NOT NULL,
+                        channel_id TEXT NOT NULL,
+                        PRIMARY KEY (uid, user_id)
                     )
                 """)
                 await conn.commit()
-                print("Database sucessfully initialized.")
+                ic("Database successfully initialized.")
 
         except Exception as e:
-            print(f"Error occurred while initializing database: {e}")
+            ic(f"Error occurred while initializing database: {e}")
 
 
 if __name__ == "__main__":
