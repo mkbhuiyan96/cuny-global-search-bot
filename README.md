@@ -4,7 +4,7 @@ This tool allows users to connect their own Discord bot to the [CUNY Global Sear
 
 This is an updated version of my original scraper. It now supports all CUNY schools instead of being hardcoded to Queens College. It also minimizes user configuration — for example, term codes are auto-generated when needed.
 
-[!Example](data/demo.png)
+![Example](data/demo.png)
 
 ## Features
 
