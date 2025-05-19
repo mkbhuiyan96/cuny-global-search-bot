@@ -1,15 +1,15 @@
 # CUNY Global Search Web Scraper
 
-This tool allows users to connect their own Discord bot to the [CUNY Global Search](https://globalsearch.cuny.edu/CFGlobalSearchTool/search.jsp) system to monitor course availability. When a course status changes (e.g. from Open to Closed), interested users are automatically notified on Discord.
+This tool allows users to connect their Discord bot to the [CUNY Global Search](https://globalsearch.cuny.edu/CFGlobalSearchTool/search.jsp) system to monitor course availability. When a course status changes (e.g., from Open to Closed), interested users are automatically notified on Discord.
 
-This is an updated version of my original scraper. It now supports all CUNY schools instead of being hardcoded to Queens College. It also minimizes user configuration — for example, term codes are auto-generated when needed.
+This is an updated version of my original scraper. It now supports all CUNY schools and automatically determines the semester for scraping instead of having to hard-code these values.
 
 ![Example](data/demo.png)
 
 ## Features
 
 - Track course availability across all CUNY schools
-- Get notified on Discord when a course status changes (e.g. Open → Closed)
+- Get notified on Discord when a course status changes (e.g., Open → Closed)
 - Retrieve information such as Instructor, Meeting Times, Room, etc.
 
 ## Prerequisites
