@@ -61,3 +61,8 @@ This updated version of my scraper now supports all CUNY schools and automatical
     ```bash
     python main.py
     ```
+
+### To Do
+
+- Update logic for multiple courses with same course number
+- Add functionality for when waitlist opens up

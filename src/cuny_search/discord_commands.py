@@ -20,47 +20,42 @@ class CourseCommands(commands.Cog):
     @app_commands.describe(institution="Name of the college. Defaults to 'Queens College'.")
     async def add_course(self, interaction: Interaction, course_number: COURSE_NUMBERS, term: TERMS, year: YEARS, institution: INSTITUTIONS, session: SESSIONS) -> None:
         course_params = CourseParams(course_number, term, year, session, institution)
+        try:
+            soup = await scrape(self.bot.scraper, course_params)
+            course_details, course_availabilities = process(soup)
+
+            if course_details.course_number != str(course_number):
+                raise ValueError(f"Mismatched course number: expected {course_number}, got {course_details.course_number}. Ensure all fields are accurate.")
+        except Exception as e:
+            ic(f"An error occured while trying to add a new course: {e}")
+            await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
+            await self.bot.refresh_scraper()
+            return
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
 
             try:
-                uid, is_newly_created = await db.get_or_create_uid(conn, course_params)
+                uid = await db.add_course_params_and_get_uid(conn, course_params)
             except Exception as e:
                 ic(f"An error occured while trying to access the DB to verify course exists: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                 return
 
-            if not is_newly_created:
-                is_already_added = False
-
-                try:
-                    is_already_added = await db.is_course_in_user_interests(conn, uid, interaction.user.id)
-                except Exception as e:
-                    ic(f"An error occured while trying to access the DB to check if user already added the course: {e}")
-                    await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
-                    return
-
-                if is_already_added:
-                    await interaction.response.send_message(f"You are already tracking this course!", ephemeral=True)
-                    return
-
             try:
-                soup = await scrape(self.bot.scraper, course_params)
-                course_details, course_availabilities = process(soup)
-
-                if course_details.course_number != str(course_number):
-                    raise ValueError(f"Mismatched course number: expected {course_number}, got {course_details.course_number}. Most likely malformed course info.")
-
-                await db.add_course_details(conn, uid, course_details)
-                await db.add_course_availability(conn, uid, course_availabilities)
+                is_already_added = await db.is_course_in_user_interests(conn, uid, interaction.user.id)
             except Exception as e:
-                ic(f"An error occured while trying to add a new course: {e}")
+                ic(f"An error occured while trying to access the DB to check if user already added the course: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
-                await self.bot.refresh_scraper()
+                return
+
+            if is_already_added:
+                await interaction.response.send_message(f"You are already tracking this course!", ephemeral=True)
                 return
 
             try:
+                await db.add_course_details(conn, uid, course_details)
+                await db.add_course_availability(conn, uid, course_availabilities)
                 await db.add_user_interest(conn, UserInterests(uid, interaction.user.id, interaction.channel.id))
                 await interaction.response.send_message(f"```Added {course_number} to your tracked courses.```")
             except Exception as e:

@@ -17,7 +17,7 @@ async def is_database_empty(conn: Connection) -> bool:
         return True
 
 
-async def get_or_create_uid(conn: Connection, course_params: CourseParams) -> tuple[int | None, bool]:
+async def add_course_params_and_get_uid(conn: Connection, course_params: CourseParams) -> int:
     try:
         async with conn.cursor() as cursor:
             await cursor.execute("""
@@ -27,7 +27,7 @@ async def get_or_create_uid(conn: Connection, course_params: CourseParams) -> tu
             """, course_params.get_encoded_tuple())
             row = await cursor.fetchone()
             if row:
-                return (row[0], False)
+                return row[0]
 
             await cursor.execute("""
                 INSERT INTO course_params (course_base64, session, term_code, institution)
@@ -38,10 +38,10 @@ async def get_or_create_uid(conn: Connection, course_params: CourseParams) -> tu
 
             uid = cursor.lastrowid
             ic(f"Added new course: {course_params.course_number} with UID: {uid}")
-            return (uid, True) if uid else (None, False)
+            return uid if uid else None
     except Exception as e:
         ic(f"DB error occurred during upsert for {course_params.get_encoded_params()}: {e}")
-        return (None, False)
+        return None
 
 
 async def get_unique_uid(conn: Connection, course_params) -> int:
@@ -62,8 +62,10 @@ async def get_unique_uid(conn: Connection, course_params) -> int:
             row = await cursor.fetchone()
 
             if not row:
-                # If there are multiple rows found then the user probably needs to be more specific with their query
-                return AMBIGUOUS if len(rows) > 1 else NOT_FOUND
+                if len(rows) > 1:
+                    return AMBIGUOUS
+                # If there was only one row returned, no need to be strict about the row
+                return rows[0][0] if len(rows) == 1 else NOT_FOUND
             return row[0]
     except Exception as e:
         ic(f"An error occured while trying to get unique uid: {course_params}")
@@ -73,19 +75,53 @@ async def get_unique_uid(conn: Connection, course_params) -> int:
 async def add_course_details(conn: Connection, uid: int, course_details: CourseDetails) -> None:
     try:
         async with conn.cursor() as cursor:
-            await cursor.execute("INSERT INTO course_details VALUES (?, ?, ?, ?, ?, ?, ?)", (uid, *astuple(course_details)))
+            await cursor.execute("""
+                INSERT INTO course_details (
+                    uid,
+                    course_number,
+                    course_name,
+                    days_and_times,
+                    room,
+                    instructor,
+                    meeting_dates
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(uid) DO UPDATE SET
+                    course_number = excluded.course_number,
+                    course_name = excluded.course_name,
+                    days_and_times = excluded.days_and_times,
+                    room = excluded.room,
+                    instructor = excluded.instructor,
+                    meeting_dates = excluded.meeting_dates
+            """, (uid, *astuple(course_details)))
             await conn.commit()
     except Exception as e:
-        ic(f"DB error occurred while attempting to add course details {course_details}: {e}")
+        ic(f"DB error occurred while inserting/updating course details {course_details}: {e}")
 
 
 async def add_course_availability(conn: Connection, uid: int, course_availabilities: CourseAvailabilities) -> None:
     try:
         async with conn.cursor() as cursor:
-            await cursor.execute("INSERT INTO course_availabilities VALUES (?, ?, ?, ?, ?, ?, ?)", (uid, *astuple(course_availabilities)))
+            await cursor.execute("""
+                INSERT INTO course_availabilities (
+                    uid,
+                    status,
+                    course_capacity,
+                    waitlist_capacity,
+                    currently_enrolled,
+                    currently_waitlisted,
+                    available_seats
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(uid) DO UPDATE SET
+                    status = excluded.status,
+                    course_capacity = excluded.course_capacity,
+                    waitlist_capacity = excluded.waitlist_capacity,
+                    currently_enrolled = excluded.currently_enrolled,
+                    currently_waitlisted = excluded.currently_waitlisted,
+                    available_seats = excluded.available_seats
+            """, (uid, *astuple(course_availabilities)))
             await conn.commit()
     except Exception as e:
-        ic(f"DB error occurred while attempting to add course availabilities {course_availabilities}: {e}")
+        ic(f"DB error occurred while attempting to insert/update course availability {course_availabilities}: {e}")
 
 
 async def get_course_details(conn: Connection, course_params: CourseParams) -> Row | None:
