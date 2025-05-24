@@ -169,7 +169,7 @@ class CourseCommands(commands.Cog):
             message = (
                 f"\033[1;36mClass:\033[0m {course_name}-\u001b[34m{course_number}\u001b[0m\n"
                 f"\033[1;36mRoom:\033[0m {room}\n"
-                f"\033[1;36mInstructor:\033[0m {instructor if instructor else "No professor assigned"}\n"
+                f"\033[1;36mInstructor:\033[0m {instructor if instructor else 'No professor assigned'}\n"
                 f"\033[1;36mSchedule:\033[0m This class will meet \033[3m{days_and_times}\033[0m, {meeting_dates}."
             )
             await interaction.response.send_message(f"```ansi\n{message}\n```")
@@ -190,7 +190,7 @@ class CourseCommands(commands.Cog):
                         course_number, course_name, days_and_times, _, instructor, meeting_dates = row[4:]
                         lines.append(
                             f"\u001b[1;36mClass:\u001b[0m {course_name}-\u001b[34m{course_number}\u001b[0m\n"
-                            f"  \u001b[1;36mInstructor:\u001b[0m {instructor if instructor else "No professor assigned"}\n"
+                            f"  \u001b[1;36mInstructor:\u001b[0m {instructor if instructor else 'No professor assigned'}\n"
                             f"  \u001b[1;36mSchedule:\u001b[0m This class will meet \033[3m{days_and_times}\033[0m, {meeting_dates}."
                         )
 
