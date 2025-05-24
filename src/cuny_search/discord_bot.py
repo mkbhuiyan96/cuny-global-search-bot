@@ -31,7 +31,7 @@ class Client(commands.Bot):
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
 
-        # await self.tree.sync()  # Syncs the commands globally (has a limit on how often this can be done)
+        # await self.tree.sync()  # Syncs the commands globally (has a rate limit)
 
     async def on_ready(self) -> None:
         ic(f"Logged on as {self.user}.")
@@ -68,7 +68,7 @@ async def start_monitoring() -> NoReturn:
                 ic(f"Error while trying to fetch all course params: {e}")
                 continue
 
-        uid_soup_pairs = []
+        uid_soup_pairs: list[tuple[int, BeautifulSoup]] = []
         for uid, *encoded_params in all_course_params:
             async with client.semaphore:
                 try:

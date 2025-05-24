@@ -1,10 +1,9 @@
-from random import uniform
 from typing import Literal, Optional
 from discord import app_commands
 
 # Course Removal Constants
-NOT_FOUND = -1
-AMBIGUOUS = -2
+NOT_FOUND: int = -1
+AMBIGUOUS: int = -2
 
 # Discord Constants
 COURSE_NUMBERS = app_commands.Range[int, 1000, 99999]

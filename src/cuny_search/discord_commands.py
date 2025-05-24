@@ -62,7 +62,7 @@ class CourseCommands(commands.Cog):
 
             try:
                 await db.add_user_interest(conn, UserInterests(uid, interaction.user.id, interaction.channel.id))
-                await interaction.response.send_message(f"Added {course_number} to your tracked courses.")
+                await interaction.response.send_message(f"```Added {course_number} to your tracked courses.```")
             except Exception as e:
                 ic(f"An error occured while trying to add a new user interest: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
@@ -70,6 +70,10 @@ class CourseCommands(commands.Cog):
 
     @app_commands.command(name="remove_course", description="Stop tracking a course.")
     @app_commands.describe(course_number="Class Number that can be found on Global Search or Schedule Builder.")
+    @app_commands.describe(term="Defaults to current term.")
+    @app_commands.describe(year="Defaults to current year.")
+    @app_commands.describe(session="Typically required for Summer or Winter courses. Defaults to 'Regular Academic Session'.")
+    @app_commands.describe(institution="Name of the college. Defaults to 'Queens College'.")
     async def remove_course(self, interaction: Interaction, course_number: COURSE_NUMBERS, term: TERMS, year: YEARS, institution: INSTITUTIONS, session: SESSIONS) -> None:
         course_params = CourseParams(course_number, term, year, session, institution)
 
@@ -79,7 +83,7 @@ class CourseCommands(commands.Cog):
             try:
                 num_remaining = await db.remove_user_interest(conn, course_params, interaction.user.id)
                 if num_remaining == AMBIGUOUS:
-                    await interaction.response.send_message("Multiple classes found with that course number, please fill out full details.")
+                    await interaction.response.send_message("Multiple classes found with that course number, please fill out full details.", ephemeral=True)
                     return
 
                 if num_remaining == NOT_FOUND:
@@ -89,29 +93,35 @@ class CourseCommands(commands.Cog):
                 await interaction.response.send_message(f"An error occured: {e}", ephemeral=True)
                 return
 
-        message = f"Successfully removed {course_number}."
+        message = f"```Successfully removed {course_number}."
         if num_remaining == 0:
             message += "\nNo one else was tracking this course, so it was removed from the database."
+        message += "```"
         await interaction.response.send_message(message)
 
 
     @app_commands.command(name="get_course_availability", description="Returns status of course and number of seats.")
     @app_commands.describe(course_number="Class number that can be found on Global Search or Schedule Builder.")
-    async def get_course_availability(self, interaction: Interaction, course_number: COURSE_NUMBERS) -> None:
+    @app_commands.describe(term="Defaults to current term.")
+    @app_commands.describe(year="Defaults to current year.")
+    @app_commands.describe(session="Typically required for Summer or Winter courses. Defaults to 'Regular Academic Session'.")
+    @app_commands.describe(institution="Name of the college. Defaults to 'Queens College'.")
+    async def get_course_availability(self, interaction: Interaction, course_number: COURSE_NUMBERS, term: TERMS, year: YEARS, institution: INSTITUTIONS, session: SESSIONS) -> None:
+        course_params = CourseParams(course_number, term, year, session, institution)
         course_availability = None
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
 
             try:
-                course_availability = await db.get_course_availability(conn, course_number)
+                course_availability = await db.get_course_availability(conn, course_params)
             except Exception as e:
                 ic(f"An error occured while trying to access the DB for course availability: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                 return
 
         if course_availability:
-            status, course_capacity, waitlist_capacity, currently_enrolled, currently_waitlisted, available_seats = course_availability[6:]
+            _, status, course_capacity, waitlist_capacity, currently_enrolled, currently_waitlisted, available_seats = course_availability
 
             if status == "Open":
                 status_color = "\033[1;32m"
@@ -131,35 +141,40 @@ class CourseCommands(commands.Cog):
             )
             await interaction.response.send_message(f"```ansi\n{message}\n```")
         else:
-            await interaction.response.send_message("Class not found in database!")
+            await interaction.response.send_message("Class not found in database!", ephemeral=True)
 
 
     @app_commands.command(name="get_course_details", description="Returns information such as meet times and professor.")
     @app_commands.describe(course_number="Class number that can be found on Global Search or Schedule Builder.")
-    async def get_course_details(self, interaction: Interaction, course_number: COURSE_NUMBERS) -> None:
+    @app_commands.describe(term="Defaults to current term.")
+    @app_commands.describe(year="Defaults to current year.")
+    @app_commands.describe(session="Typically required for Summer or Winter courses. Defaults to 'Regular Academic Session'.")
+    @app_commands.describe(institution="Name of the college. Defaults to 'Queens College'.")
+    async def get_course_details(self, interaction: Interaction, course_number: COURSE_NUMBERS, term: TERMS, year: YEARS, institution: INSTITUTIONS, session: SESSIONS) -> None:
+        course_params = CourseParams(course_number, term, year, session, institution)
         course_details = None
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
             await conn.execute("PRAGMA foreign_keys=ON")
 
             try:
-                course_details = await db.get_course_details(conn, course_number)
+                course_details = await db.get_course_details(conn, course_params)
             except Exception as e:
                 ic(f"An error occured while trying to access the DB for course availability: {e}")
                 await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
                 return
 
         if course_details:
-            course_name, days_and_times, room, instructor, meeting_dates, = course_details[6:]
+            _, _, course_name, days_and_times, room, instructor, meeting_dates = course_details
             message = (
                 f"\033[1;36mClass:\033[0m {course_name}-\u001b[34m{course_number}\u001b[0m\n"
                 f"\033[1;36mRoom:\033[0m {room}\n"
-                f"\033[1;36mInstructor:\033[0m {instructor}\n"
+                f"\033[1;36mInstructor:\033[0m {instructor if instructor else "No professor assigned"}\n"
                 f"\033[1;36mSchedule:\033[0m This class will meet \033[3m{days_and_times}\033[0m, {meeting_dates}."
             )
             await interaction.response.send_message(f"```ansi\n{message}\n```")
         else:
-            await interaction.response.send_message("Class not found in database!")
+            await interaction.response.send_message("Class not found in database!", ephemeral=True)
 
 
     @app_commands.command(name="get_my_tracked_courses", description="Returns all the courses you are tracking.")
@@ -172,15 +187,11 @@ class CourseCommands(commands.Cog):
                 if rows:
                     lines: list[str] = []
                     for row in rows:
-                        course_name = row[4]
-                        course_number = row[3]
-                        days_and_times = row[5]
-                        professor = row[7] if row[7] else "No professor assigned"
-
+                        course_number, course_name, days_and_times, _, instructor, meeting_dates = row[4:]
                         lines.append(
                             f"\u001b[1;36mClass:\u001b[0m {course_name}-\u001b[34m{course_number}\u001b[0m\n"
-                            f"  \u001b[1;36mDays & Times:\u001b[0m {days_and_times}\n"
-                            f"  \u001b[1;36mInstructor:\u001b[0m {professor}"
+                            f"  \u001b[1;36mInstructor:\u001b[0m {instructor if instructor else "No professor assigned"}\n"
+                            f"  \u001b[1;36mSchedule:\u001b[0m This class will meet \033[3m{days_and_times}\033[0m, {meeting_dates}."
                         )
 
                     ansi_block = "```ansi\n" + "\n\n".join(lines) + "\n```"

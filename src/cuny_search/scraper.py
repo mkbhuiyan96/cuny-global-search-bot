@@ -47,5 +47,6 @@ async def scrape(client: AsyncClient, params: CourseParams | EncodedParams) -> B
         ic(f"Error while trying to scrape all courses for availability: {e}")
         return None
 
+
 if __name__ == "__main__":
     pass
