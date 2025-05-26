@@ -8,9 +8,6 @@ from cuny_search.models import CourseParams, EncodedParams
 from cuny_search.utils import get_current_term_and_year, get_global_search_term_value
 
 
-semaphore = asyncio.Semaphore(5)
-
-
 async def refresh_client():
     while True:
         try:
@@ -27,6 +24,7 @@ async def refresh_client():
             client = AsyncClient(headers=HEADERS)
 
             await client.post("https://globalsearch.cuny.edu/CFGlobalSearchTool/CFSearchToolController", data=payload)
+            ic("Scraper client successfully refreshed.")
             return client
         except Exception as e:
             ic(f"Error while trying to create scraper session: {e}")

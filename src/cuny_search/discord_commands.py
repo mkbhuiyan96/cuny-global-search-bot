@@ -106,8 +106,6 @@ class CourseCommands(commands.Cog):
         course_availability = None
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
-            await conn.execute("PRAGMA foreign_keys=ON")
-
             try:
                 course_availability = await db.get_course_availability(conn, course_params)
             except Exception as e:
@@ -150,8 +148,6 @@ class CourseCommands(commands.Cog):
         course_details = None
 
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
-            await conn.execute("PRAGMA foreign_keys=ON")
-
             try:
                 course_details = await db.get_course_details(conn, course_params)
             except Exception as e:
@@ -175,8 +171,6 @@ class CourseCommands(commands.Cog):
     @app_commands.command(name="get_my_tracked_courses", description="Returns all the courses you are tracking.")
     async def get_my_tracked_courses(self, interaction: Interaction) -> None:
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
-            await conn.execute("PRAGMA foreign_keys=ON")
-
             try:
                 rows = await db.fetch_user_interests(conn, interaction.user.id)
                 if rows:
@@ -201,8 +195,6 @@ class CourseCommands(commands.Cog):
     @app_commands.command(name="fetch_all_courses_tracked_by_bot", description="Returns all the courses the bot is tracking for everyone.")
     async def fetch_all_courses_tracked_by_bot(self, interaction: Interaction) -> None:
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
-            await conn.execute("PRAGMA foreign_keys=ON")
-
             try:
                 rows = await db.fetch_all_course_numbers_and_names(conn)
                 if rows:

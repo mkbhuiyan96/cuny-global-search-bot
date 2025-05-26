@@ -35,6 +35,8 @@ class Client(commands.Bot):
 
     async def on_ready(self) -> None:
         ic(f"Logged on as {self.user}.")
+        await initialize_tables()
+        self.scraper = await refresh_client()
         await start_monitoring()
 
 
@@ -50,13 +52,8 @@ def status_changed(prev_status: str, new_status: str) -> bool:
 
 
 async def start_monitoring() -> NoReturn:
-    await initialize_tables()
-    client.scraper = await refresh_client()
-
     while True:
         async with aiosqlite.connect(DATA_DIR/"classes.db") as conn:
-            await conn.execute("PRAGMA foreign_keys=ON")
-
             if await db.is_database_empty(conn):
                 ic("Database is empty. Sleeping for 1 minute.")
                 await asyncio.sleep(60)
@@ -94,16 +91,28 @@ async def start_monitoring() -> NoReturn:
 
                 for uid, course_details, course_availabilities in all_processed_data:
                     prev_status = await db.update_course_availability(conn, uid, course_availabilities)
+                    status = course_availabilities.status
 
-                    if prev_status and status_changed(prev_status, course_availabilities.status):
+                    if prev_status and status_changed(prev_status, status):
                         all_users_and_channels = await db.fetch_all_users_and_channels_for_course(conn, uid)
+
+                        if status == "Open":
+                            status_color = "\033[1;32m"
+                        elif status == "Closed":
+                            status_color = "\033[1;31m"
+                        elif status == "Wait List":
+                            status_color = "\033[1;33m"
+                        else:
+                            status_color = "\033[0m"
+
+                        ansi_message = f"{course_details.course_name}-{course_details.course_number} is now {status_color}{status}\033[0m!"
 
                         for user_id, channel_id in all_users_and_channels:
                             channel = client.get_channel(int(channel_id))
                             if not channel:
                                 channel = await client.fetch_channel(int(channel_id))
-                            await channel.send(f"<@{user_id}>, {course_details.course_name}-{course_details.course_number} is now {course_availabilities.status}!")
-                            ic(f"Notified {user_id} in {channel_id} about {course_details.course_name}-{course_details.course_number} being {course_availabilities.status}.")
+                            await channel.send(f"<@{user_id}>\n```ansi\n{ansi_message}\n```")
+                            ic(f"Notified {user_id} in {channel_id} about {course_details.course_name}-{course_details.course_number} being {status}.")
 
                     ic(f"Course availability updated for: UID: {uid}, {course_details}, {course_availabilities}")
         except Exception as e:
